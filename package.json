@@ -1,6 +1,6 @@
 {
     "name":  "dsh-handover-protocol",
-    "version":  "1.2.2",
+    "version":  "1.3.0",
     "type":  "module",
     "main":  "./index.js",
     "description":  "会话头部的标准化交接手续开关按钮：默认暗色不注入协议，点亮后按 sessionId 记住开关并注入协议全文指针。",

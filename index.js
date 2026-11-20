@@ -89,31 +89,61 @@ function cwdOf(agent) {
 
 function isOn(sessionId) {
   if (!sessionId) return false
-  try { return readState().state[sessionId] === true } catch { return false }
+  try { return effectiveOn(readState(), sessionId) } catch { return false }
+}
+
+// 生效开关三态解析：显式 true 优先，显式 false 次之（用户单独关掉的会话不被自动点亮翻转），
+// 未设置（undefined）继承“新会话自动点亮”（保留键 _autoArm）。
+function effectiveOn(r, sessionId) {
+  if (!sessionId) return false
+  const v = r.state[sessionId]
+  if (v === true) return true
+  if (v === false) return false
+  return r.state._autoArm === true
+}
+
+function autoArmOf(r) {
+  return r.state._autoArm === true
 }
 
 // sessionId 白名单：字母/数字/下划线/连字符，≤128。客户端实际用 "session-<uuid>"，
-// 该正则同时挡掉 1MB 超长 key 与 __proto__/constructor 等原型危险 key。
+// 该正则同时挡掉 1MB 超长 key、__proto__/constructor 等原型危险 key，以及保留键 _autoArm
+// （它是自动点亮开关的存储位，不是会话 id——state/toggle 都不应把它当会话处理）。
 const SESSION_ID_RE = /^[A-Za-z0-9_-]{1,128}$/
 function validSessionId(s) {
   if (typeof s !== 'string' || !SESSION_ID_RE.test(s)) return false
-  return s !== '__proto__' && s !== 'constructor' && s !== 'prototype'
+  return s !== '_autoArm' && s !== '__proto__' && s !== 'constructor' && s !== 'prototype'
 }
 
 function setOn(sessionId, on) {
   if (!validSessionId(sessionId)) return false
+  // _autoArm 是保留键：只能经 autoArm 方法改，不接受伪装成 sessionId 的改写。
+  if (sessionId === '_autoArm') return false
   try {
     const r = readState()
     // degraded 态禁止写盘：r.state 是替身空对象，直接写入会覆盖损坏文件、
     // 销毁其他会话的开关状态。返回 false → toggle 500 → 客户端显示错误态。
     if (r.degraded) return false
     const s = r.state
-    if (on) s[sessionId] = true
-    else delete s[sessionId]
+    // off 记显式 false（不删 key）：否则该会话会被 _autoArm 继承翻转回去。
+    s[sessionId] = on === true
     writeState(s)
     return true
   } catch (e) {
     logger.warn('写入状态失败:', e instanceof Error ? e.message : e)
+    return false
+  }
+}
+
+function setAutoArm(on) {
+  try {
+    const r = readState()
+    if (r.degraded) return false
+    r.state._autoArm = on === true
+    writeState(r.state)
+    return true
+  } catch (e) {
+    logger.warn('写入自动点亮失败:', e instanceof Error ? e.message : e)
     return false
   }
 }
@@ -211,7 +241,7 @@ export function apply(ctx, config = {}) {
           const r = readState()
           // degraded：让模型看得见，而不是静默空串。
           if (r.degraded) return degradedText()
-          if (!(r.state[sessionIdOf(agent)] === true)) return ''
+          if (!effectiveOn(r, sessionIdOf(agent))) return ''
           return enabledText(protocolPath, protocolState(protocolPath, cwdOf(agent)))
         } catch (e) {
           logger.warn('注入协议上下文失败，降级为不注入:', e instanceof Error ? e.message : e)
@@ -236,22 +266,23 @@ export function apply(ctx, config = {}) {
           properties: {
             ok: { type: 'boolean' },
             enabled: { type: 'boolean' },
+            autoArm: { type: 'boolean' },
             degraded: { type: 'boolean' },
             sessionId: { type: 'string' },
           },
-          required: ['ok', 'enabled', 'degraded'],
+          required: ['ok', 'enabled', 'autoArm', 'degraded'],
           additionalProperties: false,
         },
         render: textRender((v) => v?.enabled
           ? '本会话已启用标准化交接手续。收到交接触发词时读取协议全文并执行。'
           : v?.degraded
             ? '⚠ 标准化交接手续状态不可读（session-state.json 异常）。请告知用户检查插件目录下的 session-state.json。'
-            : '本会话未启用标准化交接手续。用户可在会话头部点击「交接」按钮启用。'),
+            : '本会话未启用标准化交接手续。用户可在会话头部点击「交接」按钮启用，或开启「自动点亮」（未单独设置的会话将启用）。'),
       },
       async execute(args, exec) {
         const sessionId = sessionIdOf(exec?.agent ?? exec?.scope ?? exec)
         const r = readState()
-        return { ok: true, enabled: r.state[sessionId] === true, degraded: r.degraded, sessionId: sessionId ?? '' }
+        return { ok: true, enabled: effectiveOn(r, sessionId), autoArm: autoArmOf(r), degraded: r.degraded, sessionId: sessionId ?? '' }
       },
     })), 'dsh-handover-protocol: handover_status 工具')
     if (typeof d === 'function') disposers.push(d)
@@ -284,7 +315,7 @@ export function apply(ctx, config = {}) {
           if (req.method !== 'POST') { send(405, { ok: false, error: 'method not allowed' }); return }
           const u = new URL(req.url || '/', 'http://dsh.internal')
           const method = u.pathname.startsWith(API_BASE + '/') ? u.pathname.slice(API_BASE.length + 1) : ''
-          if (method !== 'toggle' && method !== 'state') { send(404, { ok: false, error: 'unknown method' }); return }
+          if (method !== 'toggle' && method !== 'state' && method !== 'autoArm') { send(404, { ok: false, error: 'unknown method' }); return }
           // Buffer 累积 + 1MB 上限，避免跨 chunk 多字节乱码与无界读取。
           const chunks = []
           let total = 0
@@ -298,10 +329,24 @@ export function apply(ctx, config = {}) {
           let payload = {}
           try { payload = text.trim() === '' ? {} : JSON.parse(text) } catch { send(400, { ok: false, error: 'bad json' }); return }
           const sessionId = typeof payload.sessionId === 'string' ? payload.sessionId : ''
+          if (method === 'autoArm') {
+            // 读：body 可不带 on；写：on 必须是 boolean。_autoArm 与 sessionId 无关。
+            if (payload.on === undefined) {
+              const r = readState()
+              send(200, { ok: true, autoArm: autoArmOf(r), degraded: r.degraded })
+              return
+            }
+            if (typeof payload.on !== 'boolean') { send(400, { ok: false, error: 'on must be boolean' }); return }
+            const saved = setAutoArm(payload.on)
+            const after = readState()
+            const okRsp = saved && !after.degraded
+            send(okRsp ? 200 : 500, { ok: okRsp, autoArm: autoArmOf(after), degraded: after.degraded })
+            return
+          }
           if (!validSessionId(sessionId)) { send(400, { ok: false, error: 'invalid sessionId' }); return }
           if (method === 'state') {
             const r = readState()
-            send(200, { ok: true, enabled: r.state[sessionId] === true, degraded: r.degraded, sessionId })
+            send(200, { ok: true, enabled: effectiveOn(r, sessionId), autoArm: autoArmOf(r), degraded: r.degraded, sessionId })
             return
           }
           // on 必须是 boolean（缺省视为 off 是旧语义；类型错误现在显式拒绝，避免 200 误报）。
@@ -310,7 +355,7 @@ export function apply(ctx, config = {}) {
           const saved = setOn(sessionId, on)
           const after = readState()
           const okRsp = saved && !after.degraded
-          send(okRsp ? 200 : 500, { ok: okRsp, enabled: after.state[sessionId] === true, degraded: after.degraded, sessionId })
+          send(okRsp ? 200 : 500, { ok: okRsp, enabled: effectiveOn(after, sessionId), autoArm: autoArmOf(after), degraded: after.degraded, sessionId })
         } catch (e) {
           logger.warn('API 处理失败:', e instanceof Error ? e.message : e)
           send(500, { ok: false, error: 'internal error' })
