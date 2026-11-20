@@ -23,7 +23,11 @@ export const name = 'dsh-handover-protocol'
 export const inject = ['systemPrompt', 'tools', 'webServer', 'connection']
 
 const PLUGIN_ROOT = fileURLToPath(new URL('.', import.meta.url))
-const DEFAULT_PROTOCOL = path.join(PLUGIN_ROOT, '.tmp', 'HANDOVER-PROTOCOL.md')
+// 插件自带的默认协议全文（zh/en 两份，protocolLang 选择）；用户可通过 config.protocolPath 覆盖。
+const DEFAULT_PROTOCOLS = {
+  zh: path.join(PLUGIN_ROOT, 'protocol', 'HANDOVER-PROTOCOL.md'),
+  en: path.join(PLUGIN_ROOT, 'protocol', 'HANDOVER-PROTOCOL.en.md'),
+}
 const STATE_FILE = path.join(PLUGIN_ROOT, 'session-state.json')
 const API_BASE = '/handover/api'
 const CONTEXT_NAME = 'handover-protocol'
@@ -181,9 +185,12 @@ function defineTool(spec) {
 
 // ---- 插件主体 -------------------------------------------------------------
 export function apply(ctx, config = {}) {
+  // 协议语言选择：config.protocolLang = 'zh'（默认）| 'en'（选 protocol/HANDOVER-PROTOCOL.en.md）。
+  // config.protocolPath 显式指定时优先于语言选择。
+  const lang = config.protocolLang === 'en' ? 'en' : 'zh'
   const protocolPath = typeof config.protocolPath === 'string' && config.protocolPath.trim() !== ''
     ? config.protocolPath
-    : DEFAULT_PROTOCOL
+    : DEFAULT_PROTOCOLS[lang]
   // 协议文件缺失只 warn 一次（启动时），避免静默进入降级文本而无人知晓。
   try {
     const abs = path.isAbsolute(protocolPath) ? protocolPath : path.join(process.cwd(), protocolPath)
