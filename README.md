@@ -65,6 +65,20 @@ mklink /J "C:\Users\<you>\.dsh\profiles\desktop\node_modules\dsh-handover-protoc
 唯一持久化数据是插件目录下的 `session-state.json`：`{ "<sessionId>": true }`，
 只记录哪些会话开了开关，不含任何会话内容。
 
+## 语言 / Language
+
+触发词**不是代码级关键字匹配**，而是注入到系统提示的映射表，由模型语义匹配。
+映射同时列出中英文触发词（"准备交接" / "prepare handover" 等同义表述均可触发）。
+协议全文当前为中文——模型可读并执行，但产出物（移交包、验证记录）会以中文书写。
+英文协议版本欢迎 PR（`protocol/` 目录放一份 `HANDOVER-PROTOCOL.en.md` 并在 README
+说明切换方法即可）。
+
+Trigger words are NOT code-level keyword matching — they are a mapping table
+injected into the system prompt, matched semantically by the model. Both Chinese
+and English triggers are listed. The bundled protocol text is currently Chinese;
+the model can read and execute it, but produced artifacts will be in Chinese.
+PRs for an English protocol version are welcome.
+
 ## License
 
 MIT

@@ -23,8 +23,7 @@ export const name = 'dsh-handover-protocol'
 export const inject = ['systemPrompt', 'tools', 'webServer', 'connection']
 
 const PLUGIN_ROOT = fileURLToPath(new URL('.', import.meta.url))
-// 插件自带的默认协议全文；用户可通过 cordis.patch.yml 的 config.protocolPath 覆盖。
-const DEFAULT_PROTOCOL = path.join(PLUGIN_ROOT, 'protocol', 'HANDOVER-PROTOCOL.md')
+const DEFAULT_PROTOCOL = path.join(PLUGIN_ROOT, '.tmp', 'HANDOVER-PROTOCOL.md')
 const STATE_FILE = path.join(PLUGIN_ROOT, 'session-state.json')
 const API_BASE = '/handover/api'
 const CONTEXT_NAME = 'handover-protocol'
@@ -137,7 +136,7 @@ function enabledText(protocolPath, state) {
     lines.push('- "你来接手/接手/接管" → 接管方：先分级自判（复述横幅/作废清单/谱系，答不全按冷交接），再做 7 项机械验证并留原始输出，宣布"已接住/缺口 X"后才开工。')
     lines.push('- 日常纪律：产物随产随归档记 SHA；文档只追加不重写；每轮更新运行态登记。')
   }
-  lines.push('- 触发词映射："准备交接/交接/收尾/我要下线了" → 移交手续；"你来接手/接手/接管/继续前任的工作" → 接管手续。')
+  lines.push('- 触发词映射（模型语义匹配，不限于字面）："准备交接/交接/收尾/我要下线了" 或 "prepare handover / handover / wrap up / I\'m going offline" → 移交手续；"你来接手/接手/接管/继续前任的工作" 或 "you take over / take over / continue your predecessor\'s work" → 接管手续。')
   lines.push('- 本提示随会话开关出现；用户点暗按钮即关闭，关闭后不再注入本协议。')
   return lines.join('\n')
 }
