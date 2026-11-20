@@ -1,0 +1,22 @@
+{
+  "name": "dsh-handover-protocol",
+  "version": "1.2.0",
+  "type": "module",
+  "main": "./index.js",
+  "description": "会话头部的标准化交接手续开关按钮：默认暗色不注入协议，点亮后按 sessionId 记住开关并注入协议全文指针。",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./lib/client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": ["index.js", "lib/client.js", "protocol/HANDOVER-PROTOCOL.md", "cordis.patch.yml", "locale/*.json", "icon.svg"],
+  "engines": { "node": ">=20" },
+  "dsh": {
+    "bundle": { "patch": "./cordis.patch.yml" },
+    "client": { "platform": "web", "inject": [] },
+    "manifestVersion": 1
+  },
+  "icon": "./icon.svg",
+  "license": "MIT"
+}

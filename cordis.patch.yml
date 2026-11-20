@@ -1,0 +1,11 @@
+# 标准化交接手续插件（dsh-handover-protocol）。
+# 每个会话头部一个「交接」开关按钮：默认暗色、不注入协议；点亮后该会话
+# 收到交接触发词（准备交接 / 你来接手）时按协议执行手续。状态按 sessionId
+# 存于插件目录 session-state.json。
+# protocolPath 可省略——默认使用插件自带的 protocol/HANDOVER-PROTOCOL.md。
+# 想换成自己的协议文件时，填绝对路径（各会话 cwd 不同，相对路径会指错文件）：
+# config:
+#   protocolPath: 'C:\\path\\to\\your\\HANDOVER-PROTOCOL.md'
+- insert:
+    - id: handover-protocol
+      name: dsh-handover-protocol

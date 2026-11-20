@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Handover protocol",
+    "description": "Trigger-word handover protocol: each session header has a handover toggle button, off by default (no injection); when lit, that session follows the full procedure on handover trigger words (准备交接 / 你来接手)."
+  }
+}
