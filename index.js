@@ -16,6 +16,7 @@
  */
 
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -28,7 +29,12 @@ const DEFAULT_PROTOCOLS = {
   zh: path.join(PLUGIN_ROOT, 'protocol', 'HANDOVER-PROTOCOL.md'),
   en: path.join(PLUGIN_ROOT, 'protocol', 'HANDOVER-PROTOCOL.en.md'),
 }
-const STATE_FILE = path.join(PLUGIN_ROOT, 'session-state.json')
+// 状态文件放在 DSH_HOME 下：升级/重装会替换插件目录，不能把用户开关状态
+// 一起冲掉。旧版写在 PLUGIN_ROOT/session-state.json，首次读取时迁移一次。
+const DSH_HOME = path.resolve(process.env.DSH_HOME?.trim() ? process.env.DSH_HOME : path.join(os.homedir(), '.dsh'))
+const STATE_DIR = path.join(DSH_HOME, 'dsh-handover-protocol')
+const STATE_FILE = path.join(STATE_DIR, 'session-state.json')
+const LEGACY_STATE_FILE = path.join(PLUGIN_ROOT, 'session-state.json')
 const API_BASE = '/handover/api'
 const CONTEXT_NAME = 'handover-protocol'
 
@@ -37,9 +43,22 @@ const logger = {
 }
 
 // ---- 状态存储（按 sessionId） -------------------------------------------
+function migrateLegacyState() {
+  if (STATE_FILE === LEGACY_STATE_FILE) return
+  if (!fs.existsSync(LEGACY_STATE_FILE) || fs.existsSync(STATE_FILE)) return
+  try {
+    fs.mkdirSync(STATE_DIR, { recursive: true })
+    fs.copyFileSync(LEGACY_STATE_FILE, STATE_FILE)
+    logger.warn('已把旧版插件目录状态迁移到 DSH_HOME:', STATE_FILE)
+  } catch (e) {
+    logger.warn('迁移旧状态失败，按当前 DSH_HOME 空状态继续:', e instanceof Error ? e.message : e)
+  }
+}
+
 // degraded：状态文件存在但不可解析。此时所有开关一律视为关（fail-closed），
 // 但必须让调用方看得见——API 响应带 degraded 标志，注入回调输出可见警告。
 function readState() {
+  migrateLegacyState()
   try {
     if (!fs.existsSync(STATE_FILE)) return { state: {}, degraded: false }
     const parsed = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'))
@@ -55,6 +74,7 @@ function readState() {
 }
 
 function writeState(state) {
+  fs.mkdirSync(STATE_DIR, { recursive: true })
   // 随机后缀避免与编辑器/杀软占用固定 .tmp 冲突；Windows rename 失败重试一次。
   const tmp = STATE_FILE + '.tmp-' + process.pid + '-' + Math.random().toString(36).slice(2)
   fs.writeFileSync(tmp, JSON.stringify(state, null, 2), 'utf8')
@@ -179,7 +199,7 @@ function degradedText() {
   return [
     '### 标准化交接手续 —— ⚠ 状态不可读（degraded）',
     'session-state.json 无法解析，本会话的交接开关已停用（fail-closed）。',
-    '收到交接触发词时：不要静默继续，先告知用户检查插件目录下的 session-state.json。',
+    `收到交接触发词时：不要静默继续，先告知用户检查 DSH_HOME 下的状态文件：${STATE_FILE}。`,
   ].join('\n')
 }
 
@@ -276,7 +296,7 @@ export function apply(ctx, config = {}) {
         render: textRender((v) => v?.enabled
           ? '本会话已启用标准化交接手续。收到交接触发词时读取协议全文并执行。'
           : v?.degraded
-            ? '⚠ 标准化交接手续状态不可读（session-state.json 异常）。请告知用户检查插件目录下的 session-state.json。'
+            ? `⚠ 标准化交接手续状态不可读。请告知用户检查 DSH_HOME 下的状态文件：${STATE_FILE}。`
             : '本会话未启用标准化交接手续。用户可在会话头部点击「交接」按钮启用，或开启「自动点亮」（未单独设置的会话将启用）。'),
       },
       async execute(args, exec) {

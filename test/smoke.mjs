@@ -7,16 +7,20 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import test from 'node:test'
 
-const REPO_ROOT = path.resolve(import.meta.dirname, '..')
+// Works on Node 20.0+ without import.meta.dirname.
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-handover-smoke-'))
 const PLUGIN_COPY = path.join(TMP_ROOT, 'dsh-handover-protocol')
 fs.cpSync(REPO_ROOT, PLUGIN_COPY, { recursive: true })
 fs.rmSync(path.join(PLUGIN_COPY, '.git'), { recursive: true, force: true })
 
-const STATE_FILE = path.join(PLUGIN_COPY, 'session-state.json')
+// Isolate DSH_HOME before any dynamic import: index.js resolves it at module load.
+process.env.DSH_HOME = path.join(TMP_ROOT, 'dsh-home')
+const STATE_FILE = path.join(process.env.DSH_HOME, 'dsh-handover-protocol', 'session-state.json')
+const LEGACY_STATE_FILE = path.join(PLUGIN_COPY, 'session-state.json')
 const PROTOCOL_FILE = path.join(PLUGIN_COPY, 'protocol', 'HANDOVER-PROTOCOL.md')
 
 async function loadPlugin() {
@@ -225,6 +229,25 @@ test('autoArm applies only to sessions with no explicit choice', async () => {
   const explicitOff = requestHarness({ urlPath: '/handover/api/toggle', body: { sessionId: 'opt-out', on: false } })
   await handler(explicitOff.req, explicitOff.res)
   assert.equal(text({ agent: { session: { id: 'opt-out' } } }), '')
+})
+
+test('legacy plugin-directory state migrates to DSH_HOME once', async () => {
+  fs.rmSync(STATE_FILE, { force: true })
+  fs.rmSync(LEGACY_STATE_FILE, { force: true })
+  fs.writeFileSync(LEGACY_STATE_FILE, JSON.stringify({ 'legacy-session': true }), 'utf8')
+  const mod = await loadPlugin()
+  const h = harness()
+  mod.apply(h.ctx, { protocolPath: PROTOCOL_FILE })
+  const handler = h.registrations.webServer.handler
+
+  const state = requestHarness({ urlPath: '/handover/api/state', body: { sessionId: 'legacy-session' } })
+  await handler(state.req, state.res)
+  assert.equal(state.result().status, 200)
+  assert.equal(state.result().body.enabled, true)
+  assert.equal(state.result().body.degraded, false)
+  assert.deepEqual(JSON.parse(fs.readFileSync(STATE_FILE, 'utf8')), { 'legacy-session': true })
+  assert.match(h.registrations.systemPrompt.text({ agent: { session: { id: 'legacy-session' } } }), /已启用/)
+  assert.ok(fs.existsSync(LEGACY_STATE_FILE)) // migration never deletes the old file
 })
 
 test.after(() => {
