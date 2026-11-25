@@ -66,6 +66,16 @@ mklink /J "C:\Users\<you>\.dsh\profiles\desktop\node_modules\dsh-handover-protoc
 
 注意 `protocolPath` 必须用**绝对路径**——各会话 cwd 不同，相对路径会指错文件。
 
+## 宿主兼容
+
+`engines.dsh` 声明支持 DSH `>=0.2.1-rc.5 <0.4.0-0`；实测宿主版本为 `0.2.2-rc.1`
+（`@deepseek-ai/dsh-desktop-runtime`）。本地 smoke 覆盖状态往返、按 sessionId 隔离、
+degraded/fail-closed、sessionId 白名单、autoArm 与 API 400/405/413/403 路径：
+
+```sh
+npm test
+```
+
 ## 设计要点
 
 - 所有宿主 API 形状对齐 resource-lease / better-sidebar 等已验证实现，
