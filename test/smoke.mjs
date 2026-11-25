@@ -94,6 +94,13 @@ test('registers the four host contracts and declares the supported DSH range', a
   assert.equal(pkg.engines.dsh, '>=0.2.1-rc.5 <0.4.0-0')
   assert.match(pkg.description, /DSH >=0\.2\.1-rc\.5 <0\.4\.0-0/)
 
+  const client = fs.readFileSync(path.join(REPO_ROOT, 'lib', 'client.js'), 'utf8')
+  assert.match(client, /conversation\.session\.header\.utilities/)
+  assert.match(client, /data-dsh-handover-toggle/)
+  assert.match(client, /var rel = 'handover\/api\/' \+ method/)
+  assert.match(client, /request\('toggle', \{ sessionId: sessionId, on: on \}\)/)
+  assert.match(client, /request\('state', \{ sessionId: sessionId \}\)/)
+
   const mod = await loadPlugin()
   assert.equal(mod.name, 'dsh-handover-protocol')
   assert.deepEqual(mod.inject, ['systemPrompt', 'tools', 'webServer', 'connection'])
